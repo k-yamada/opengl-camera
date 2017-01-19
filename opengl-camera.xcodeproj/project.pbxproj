@@ -16,6 +16,7 @@
 		099196AA1E30FA8A00650F4D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 099196A81E30FA8A00650F4D /* LaunchScreen.storyboard */; };
 		099196B51E30FA8A00650F4D /* opengl_cameraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099196B41E30FA8A00650F4D /* opengl_cameraTests.swift */; };
 		099196C01E30FA8A00650F4D /* opengl_cameraUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099196BF1E30FA8A00650F4D /* opengl_cameraUITests.swift */; };
+		099196CE1E30FFC500650F4D /* Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099196CD1E30FFC500650F4D /* Camera.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		099196BB1E30FA8A00650F4D /* opengl-cameraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "opengl-cameraUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		099196BF1E30FA8A00650F4D /* opengl_cameraUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = opengl_cameraUITests.swift; sourceTree = "<group>"; };
 		099196C11E30FA8A00650F4D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		099196CD1E30FFC500650F4D /* Camera.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Camera.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +107,7 @@
 				0991969D1E30FA8A00650F4D /* Shader.fsh */,
 				0991969F1E30FA8A00650F4D /* Shader.vsh */,
 				099196A11E30FA8A00650F4D /* GameViewController.swift */,
+				099196CD1E30FFC500650F4D /* Camera.swift */,
 				099196A31E30FA8A00650F4D /* Main.storyboard */,
 				099196A61E30FA8A00650F4D /* Assets.xcassets */,
 				099196A81E30FA8A00650F4D /* LaunchScreen.storyboard */,
@@ -272,6 +275,7 @@
 			files = (
 				099196A21E30FA8A00650F4D /* GameViewController.swift in Sources */,
 				0991969C1E30FA8A00650F4D /* AppDelegate.swift in Sources */,
+				099196CE1E30FFC500650F4D /* Camera.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

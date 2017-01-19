@@ -6,30 +6,60 @@
 //  Copyright © 2017年 kyamada. All rights reserved.
 //
 
+// http://stackoverflow.com/questions/4662789/the-most-efficient-way-to-modify-cmsamplebuffer-contents
+
+
 import GLKit
 import OpenGLES
+import AVFoundation
 
-func BUFFER_OFFSET(_ i: Int) -> UnsafeRawPointer {
-    return UnsafeRawPointer(bitPattern: i)!
+func BUFFER_OFFSET(_ i: Int) -> UnsafeRawPointer? {
+    return UnsafeRawPointer(bitPattern: i)
 }
 
-let UNIFORM_MODELVIEWPROJECTION_MATRIX = 0
-let UNIFORM_NORMAL_MATRIX = 1
-var uniforms = [GLint](repeating: 0, count: 2)
-
 class GameViewController: GLKViewController {
+
+    let gVertices: [GLfloat] = [
+//        -1.0, -1.0, 0.0,  // left top
+//        -1.0,  1.0, 0.0,  // left bottom
+//        1.0, -1.0, 0.0,   // right top
+//        1.0,  1.0, 0.0,   // right bottom
+        -1.0, -1.0,  // left top
+        -1.0,  1.0,  // left bottom
+        1.0, -1.0,   // right top
+        1.0,  1.0,   // right bottom
+    ]
     
-    var program: GLuint = 0
+    let texCoords: [GLfloat] = [
+//        0.0, 0.0, // left top
+//        0.0, 1.0, // left bottom
+//        1.0, 0.0, // right top
+//        1.0, 1.0, // right bottom
+        0.0, 1.0, // 左下
+        1.0, 1.0, // 右下
+        0.0, 0.0, // 左上
+        1.0, 0.0, // 右上
+    ]
     
-    var modelViewProjectionMatrix:GLKMatrix4 = GLKMatrix4Identity
-    var normalMatrix: GLKMatrix3 = GLKMatrix3Identity
-    var rotation: Float = 0.0
+    let gIndices: [GLubyte] = [
+        0,1,2,3
+    ]
     
-    var vertexArray: GLuint = 0
+    let gColors: [GLfloat] = [
+        1.0, 0.0, 0.0, 1.0,
+        0.0, 1.0, 0.0, 1.0,
+        0.0, 0.0, 1.0, 1.0,
+        1.0, 1.0, 1.0, 1.0
+    ]
+
     var vertexBuffer: GLuint = 0
+    var indexBuffer: GLuint = 0
+    var colorBuffer: GLuint = 0
+    var textureBuffer: GLuint = 0
     
     var context: EAGLContext? = nil
     var effect: GLKBaseEffect? = nil
+    var camera: Camera!
     
     deinit {
         self.tearDownGL()
@@ -37,6 +67,9 @@ class GameViewController: GLKViewController {
         if EAGLContext.current() === self.context {
             EAGLContext.setCurrent(nil)
         }
+        
+        camera.stopRunning()
+        camera = nil
     }
     
     override func viewDidLoad() {
@@ -52,7 +85,9 @@ class GameViewController: GLKViewController {
         view.context = self.context!
         view.drawableDepthFormat = .format24
         
-        self.setupGL()
+        setupGL()
+        camera = Camera(delegate: self)
+        camera.startRunning()
     }
     
     override func didReceiveMemoryWarning() {
@@ -73,298 +108,131 @@ class GameViewController: GLKViewController {
     func setupGL() {
         EAGLContext.setCurrent(self.context)
         
-        if(self.loadShaders() == false) {
-            print("Failed to load shaders")
-        }
-        
         self.effect = GLKBaseEffect()
-        self.effect!.light0.enabled = GLboolean(GL_TRUE)
-        self.effect!.light0.diffuseColor = GLKVector4Make(1.0, 0.4, 0.4, 1.0)
-        
-        glEnable(GLenum(GL_DEPTH_TEST))
-        
-        glGenVertexArraysOES(1, &vertexArray)
-        glBindVertexArrayOES(vertexArray)
+        self.effect?.colorMaterialEnabled = GLboolean(GL_TRUE)
         
         glGenBuffers(1, &vertexBuffer)
         glBindBuffer(GLenum(GL_ARRAY_BUFFER), vertexBuffer)
-        glBufferData(GLenum(GL_ARRAY_BUFFER), GLsizeiptr(MemoryLayout<GLfloat>.size * gCubeVertexData.count), &gCubeVertexData, GLenum(GL_STATIC_DRAW))
-        
+        glBufferData(GLenum(GL_ARRAY_BUFFER), GLsizeiptr(MemoryLayout<GLfloat>.size * gVertices.count), gVertices, GLenum(GL_STATIC_DRAW))
         glEnableVertexAttribArray(GLuint(GLKVertexAttrib.position.rawValue))
-        glVertexAttribPointer(GLuint(GLKVertexAttrib.position.rawValue), 3, GLenum(GL_FLOAT), GLboolean(GL_FALSE), 24, BUFFER_OFFSET(0))
-        glEnableVertexAttribArray(GLuint(GLKVertexAttrib.normal.rawValue))
-        glVertexAttribPointer(GLuint(GLKVertexAttrib.normal.rawValue), 3, GLenum(GL_FLOAT), GLboolean(GL_FALSE), 24, BUFFER_OFFSET(12))
+        glVertexAttribPointer(GLuint(GLKVertexAttrib.position.rawValue), 3, GLenum(GL_FLOAT), GLboolean(GL_FALSE), GLsizei(MemoryLayout<GLfloat>.size * 3), BUFFER_OFFSET(0))
         
-        glBindVertexArrayOES(0)
+        glGenBuffers(1, &colorBuffer)
+        glBindBuffer(GLenum(GL_ARRAY_BUFFER), colorBuffer)
+        glBufferData(GLenum(GL_ARRAY_BUFFER), GLsizeiptr(MemoryLayout<GLfloat>.size * gColors.count), gColors, GLenum(GL_STATIC_DRAW))
+        glEnableVertexAttribArray(GLuint(GLKVertexAttrib.color.rawValue))
+        glVertexAttribPointer(GLuint(GLKVertexAttrib.color.rawValue), 4, GLenum(GL_FLOAT), GLboolean(GL_FALSE), GLsizei(MemoryLayout<GLfloat>.size * 4), BUFFER_OFFSET(0))
+        
+        glGenBuffers(1, &indexBuffer)
+        glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER),indexBuffer)
+        glBufferData(GLenum(GL_ELEMENT_ARRAY_BUFFER),GLsizeiptr(MemoryLayout<GLuint>.size * gIndices.count),gIndices,GLenum(GL_STATIC_DRAW))
+        
+
+    }
+    
+    // MARK: - GLKView and GLKViewController delegate methods
+    
+    func update() {
+     
+    }
+    
+    func drawTexture() {
+        if textureBuffer == 0 {
+            return
+        }
+        
+        // テクスチャの描画
+        glTexCoordPointer(2, GLenum(GL_FLOAT), 0, texCoords);
+        
+        // Step6. テクスチャの画像指定
+        glBindTexture(GLenum(GL_TEXTURE_2D), textureBuffer);
+        
+        // Step7. テクスチャの描画
+        glEnable(GLenum(GL_TEXTURE_2D))
+        glEnableClientState(GLenum(GL_VERTEX_ARRAY))
+        glEnableClientState(GLenum(GL_TEXTURE_COORD_ARRAY))
+        glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
+        glDisableClientState(GLenum(GL_TEXTURE_COORD_ARRAY))
+        glDisableClientState(GLenum(GL_VERTEX_ARRAY))
+        glDisable(GLenum(GL_TEXTURE_2D))
     }
     
     func tearDownGL() {
         EAGLContext.setCurrent(self.context)
         
         glDeleteBuffers(1, &vertexBuffer)
-        glDeleteVertexArraysOES(1, &vertexArray)
-        
-        self.effect = nil
-        
-        if program != 0 {
-            glDeleteProgram(program)
-            program = 0
-        }
+        glDeleteBuffers(1, &indexBuffer)
+        glDeleteBuffers(1, &colorBuffer)
     }
     
     // MARK: - GLKView and GLKViewController delegate methods
     
-    func update() {
-        let aspect = fabsf(Float(self.view.bounds.size.width / self.view.bounds.size.height))
-        let projectionMatrix = GLKMatrix4MakePerspective(GLKMathDegreesToRadians(65.0), aspect, 0.1, 100.0)
-        
-        self.effect?.transform.projectionMatrix = projectionMatrix
-        
-        var baseModelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, -4.0)
-        baseModelViewMatrix = GLKMatrix4Rotate(baseModelViewMatrix, rotation, 0.0, 1.0, 0.0)
-        
-        // Compute the model view matrix for the object rendered with GLKit
-        var modelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, -1.5)
-        modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0, 1.0, 1.0)
-        modelViewMatrix = GLKMatrix4Multiply(baseModelViewMatrix, modelViewMatrix)
-        
-        self.effect?.transform.modelviewMatrix = modelViewMatrix
-        
-        // Compute the model view matrix for the object rendered with ES2
-        modelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, 1.5)
-        modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0, 1.0, 1.0)
-        modelViewMatrix = GLKMatrix4Multiply(baseModelViewMatrix, modelViewMatrix)
-        
-        normalMatrix = GLKMatrix3InvertAndTranspose(GLKMatrix4GetMatrix3(modelViewMatrix), nil)
-        
-        modelViewProjectionMatrix = GLKMatrix4Multiply(projectionMatrix, modelViewMatrix)
-        
-        rotation += Float(self.timeSinceLastUpdate * 0.5)
-    }
+//    func update() {
+//        let aspect = fabsf(Float(self.view.bounds.size.width / self.view.bounds.size.height))
+//        let projectionMatrix = GLKMatrix4MakePerspective(GLKMathDegreesToRadians(65.0), aspect, 0.1, 100.0)
+//        
+//        self.effect?.transform.projectionMatrix = projectionMatrix
+//        
+//        var baseModelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, -4.0)
+//        baseModelViewMatrix = GLKMatrix4Rotate(baseModelViewMatrix, rotation, 0.0, 1.0, 0.0)
+//        
+//        // Compute the model view matrix for the object rendered with GLKit
+//        var modelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, -1.5)
+//        modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0, 1.0, 1.0)
+//        modelViewMatrix = GLKMatrix4Multiply(baseModelViewMatrix, modelViewMatrix)
+//        
+//        self.effect?.transform.modelviewMatrix = modelViewMatrix
+//        
+//        // Compute the model view matrix for the object rendered with ES2
+//        modelViewMatrix = GLKMatrix4MakeTranslation(0.0, 0.0, 1.5)
+//        modelViewMatrix = GLKMatrix4Rotate(modelViewMatrix, rotation, 1.0, 1.0, 1.0)
+//        modelViewMatrix = GLKMatrix4Multiply(baseModelViewMatrix, modelViewMatrix)
+//        
+//        normalMatrix = GLKMatrix3InvertAndTranspose(GLKMatrix4GetMatrix3(modelViewMatrix), nil)
+//        
+//        modelViewProjectionMatrix = GLKMatrix4Multiply(projectionMatrix, modelViewMatrix)
+//        
+//        rotation += Float(self.timeSinceLastUpdate * 0.5)
+//    }
     
     override func glkView(_ view: GLKView, drawIn rect: CGRect) {
         glClearColor(0.65, 0.65, 0.65, 1.0)
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT))
-        
-        glBindVertexArrayOES(vertexArray)
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         
         // Render the object with GLKit
         self.effect?.prepareToDraw()
         
-        glDrawArrays(GLenum(GL_TRIANGLES) , 0, 36)
+        //drawTexture()
         
-        // Render the object again with ES2
-        glUseProgram(program)
-        
-        withUnsafePointer(to: &modelViewProjectionMatrix, {
-            $0.withMemoryRebound(to: Float.self, capacity: 16, {
-                glUniformMatrix4fv(uniforms[UNIFORM_MODELVIEWPROJECTION_MATRIX], 1, 0, $0)
-            })
-        })
-        
-        withUnsafePointer(to: &normalMatrix, {
-            $0.withMemoryRebound(to: Float.self, capacity: 9, {
-                glUniformMatrix3fv(uniforms[UNIFORM_NORMAL_MATRIX], 1, 0, $0)
-            })
-        })
-        
-        glDrawArrays(GLenum(GL_TRIANGLES), 0, 36)
+        glDrawElements(GLenum(GL_TRIANGLE_STRIP), GLsizei(gIndices.count), GLenum(GL_UNSIGNED_BYTE),BUFFER_OFFSET(0))
     }
     
-    // MARK: -  OpenGL ES 2 shader compilation
-    
-    func loadShaders() -> Bool {
-        var vertShader: GLuint = 0
-        var fragShader: GLuint = 0
-        var vertShaderPathname: String
-        var fragShaderPathname: String
+    // Note the caller is responsible for calling glDeleteTextures on the return value.
+    func textureFromSampleBuffer(sampleBuffer: CMSampleBuffer) -> GLuint {
+        var texture: GLuint = 0;
         
-        // Create shader program.
-        program = glCreateProgram()
+        glGenTextures(1, &texture);
+        glBindTexture(GLenum(GL_TEXTURE_2D), texture);
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
         
-        // Create and compile vertex shader.
-        vertShaderPathname = Bundle.main.path(forResource: "Shader", ofType: "vsh")!
-        if self.compileShader(&vertShader, type: GLenum(GL_VERTEX_SHADER), file: vertShaderPathname) == false {
-            print("Failed to compile vertex shader")
-            return false
-        }
+        let pixelBuffer: CVImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
+        CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
+        let width: Int = CVPixelBufferGetWidth(pixelBuffer) / 4
+        let height: Int = CVPixelBufferGetHeight(pixelBuffer) / 4
+        glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGBA, GLsizei(width), GLsizei(height), 0, GLenum(GL_BGRA), GLenum(GL_UNSIGNED_BYTE), CVPixelBufferGetBaseAddress(pixelBuffer));
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0));
         
-        // Create and compile fragment shader.
-        fragShaderPathname = Bundle.main.path(forResource: "Shader", ofType: "fsh")!
-        if !self.compileShader(&fragShader, type: GLenum(GL_FRAGMENT_SHADER), file: fragShaderPathname) {
-            print("Failed to compile fragment shader")
-            return false
-        }
-        
-        // Attach vertex shader to program.
-        glAttachShader(program, vertShader)
-        
-        // Attach fragment shader to program.
-        glAttachShader(program, fragShader)
-        
-        // Bind attribute locations.
-        // This needs to be done prior to linking.
-        glBindAttribLocation(program, GLuint(GLKVertexAttrib.position.rawValue), "position")
-        glBindAttribLocation(program, GLuint(GLKVertexAttrib.normal.rawValue), "normal")
-        
-        // Link program.
-        if !self.linkProgram(program) {
-            print("Failed to link program: \(program)")
-            
-            if vertShader != 0 {
-                glDeleteShader(vertShader)
-                vertShader = 0
-            }
-            if fragShader != 0 {
-                glDeleteShader(fragShader)
-                fragShader = 0
-            }
-            if program != 0 {
-                glDeleteProgram(program)
-                program = 0
-            }
-            
-            return false
-        }
-        
-        // Get uniform locations.
-        uniforms[UNIFORM_MODELVIEWPROJECTION_MATRIX] = glGetUniformLocation(program, "modelViewProjectionMatrix")
-        uniforms[UNIFORM_NORMAL_MATRIX] = glGetUniformLocation(program, "normalMatrix")
-        
-        // Release vertex and fragment shaders.
-        if vertShader != 0 {
-            glDetachShader(program, vertShader)
-            glDeleteShader(vertShader)
-        }
-        if fragShader != 0 {
-            glDetachShader(program, fragShader)
-            glDeleteShader(fragShader)
-        }
-        
-        return true
-    }
-    
-    
-    func compileShader(_ shader: inout GLuint, type: GLenum, file: String) -> Bool {
-        var status: GLint = 0
-        var source: UnsafePointer<Int8>
-        do {
-            source = try NSString(contentsOfFile: file, encoding: String.Encoding.utf8.rawValue).utf8String!
-        } catch {
-            print("Failed to load vertex shader")
-            return false
-        }
-        var castSource: UnsafePointer<GLchar>? = UnsafePointer<GLchar>(source)
-        
-        shader = glCreateShader(type)
-        glShaderSource(shader, 1, &castSource, nil)
-        glCompileShader(shader)
-        
-        //#if defined(DEBUG)
-        //        var logLength: GLint = 0
-        //        glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLength)
-        //        if logLength > 0 {
-        //            var log = UnsafeMutablePointer<GLchar>(malloc(Int(logLength)))
-        //            glGetShaderInfoLog(shader, logLength, &logLength, log)
-        //            NSLog("Shader compile log: \n%s", log)
-        //            free(log)
-        //        }
-        //#endif
-        
-        glGetShaderiv(shader, GLenum(GL_COMPILE_STATUS), &status)
-        if status == 0 {
-            glDeleteShader(shader)
-            return false
-        }
-        return true
-    }
-    
-    func linkProgram(_ prog: GLuint) -> Bool {
-        var status: GLint = 0
-        glLinkProgram(prog)
-        
-        //#if defined(DEBUG)
-        //        var logLength: GLint = 0
-        //        glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLength)
-        //        if logLength > 0 {
-        //            var log = UnsafeMutablePointer<GLchar>(malloc(Int(logLength)))
-        //            glGetShaderInfoLog(shader, logLength, &logLength, log)
-        //            NSLog("Shader compile log: \n%s", log)
-        //            free(log)
-        //        }
-        //#endif
-        
-        glGetProgramiv(prog, GLenum(GL_LINK_STATUS), &status)
-        if status == 0 {
-            return false
-        }
-        
-        return true
-    }
-    
-    func validateProgram(prog: GLuint) -> Bool {
-        var logLength: GLsizei = 0
-        var status: GLint = 0
-        
-        glValidateProgram(prog)
-        glGetProgramiv(prog, GLenum(GL_INFO_LOG_LENGTH), &logLength)
-        if logLength > 0 {
-            var log: [GLchar] = [GLchar](repeating: 0, count: Int(logLength))
-            glGetProgramInfoLog(prog, logLength, &logLength, &log)
-            print("Program validate log: \n\(log)")
-        }
-        
-        glGetProgramiv(prog, GLenum(GL_VALIDATE_STATUS), &status)
-        var returnVal = true
-        if status == 0 {
-            returnVal = false
-        }
-        return returnVal
+        return texture;
     }
 }
 
-var gCubeVertexData: [GLfloat] = [
-    // Data layout for each line below is:
-    // positionX, positionY, positionZ,     normalX, normalY, normalZ,
-    0.5, -0.5, -0.5,        1.0, 0.0, 0.0,
-    0.5, 0.5, -0.5,         1.0, 0.0, 0.0,
-    0.5, -0.5, 0.5,         1.0, 0.0, 0.0,
-    0.5, -0.5, 0.5,         1.0, 0.0, 0.0,
-    0.5, 0.5, -0.5,         1.0, 0.0, 0.0,
-    0.5, 0.5, 0.5,          1.0, 0.0, 0.0,
-    
-    0.5, 0.5, -0.5,         0.0, 1.0, 0.0,
-    -0.5, 0.5, -0.5,        0.0, 1.0, 0.0,
-    0.5, 0.5, 0.5,          0.0, 1.0, 0.0,
-    0.5, 0.5, 0.5,          0.0, 1.0, 0.0,
-    -0.5, 0.5, -0.5,        0.0, 1.0, 0.0,
-    -0.5, 0.5, 0.5,         0.0, 1.0, 0.0,
-    
-    -0.5, 0.5, -0.5,        -1.0, 0.0, 0.0,
-    -0.5, -0.5, -0.5,      -1.0, 0.0, 0.0,
-    -0.5, 0.5, 0.5,         -1.0, 0.0, 0.0,
-    -0.5, 0.5, 0.5,         -1.0, 0.0, 0.0,
-    -0.5, -0.5, -0.5,      -1.0, 0.0, 0.0,
-    -0.5, -0.5, 0.5,        -1.0, 0.0, 0.0,
-    
-    -0.5, -0.5, -0.5,      0.0, -1.0, 0.0,
-    0.5, -0.5, -0.5,        0.0, -1.0, 0.0,
-    -0.5, -0.5, 0.5,        0.0, -1.0, 0.0,
-    -0.5, -0.5, 0.5,        0.0, -1.0, 0.0,
-    0.5, -0.5, -0.5,        0.0, -1.0, 0.0,
-    0.5, -0.5, 0.5,         0.0, -1.0, 0.0,
-    
-    0.5, 0.5, 0.5,          0.0, 0.0, 1.0,
-    -0.5, 0.5, 0.5,         0.0, 0.0, 1.0,
-    0.5, -0.5, 0.5,         0.0, 0.0, 1.0,
-    0.5, -0.5, 0.5,         0.0, 0.0, 1.0,
-    -0.5, 0.5, 0.5,         0.0, 0.0, 1.0,
-    -0.5, -0.5, 0.5,        0.0, 0.0, 1.0,
-    
-    0.5, -0.5, -0.5,        0.0, 0.0, -1.0,
-    -0.5, -0.5, -0.5,      0.0, 0.0, -1.0,
-    0.5, 0.5, -0.5,         0.0, 0.0, -1.0,
-    0.5, 0.5, -0.5,         0.0, 0.0, -1.0,
-    -0.5, -0.5, -0.5,      0.0, 0.0, -1.0,
-    -0.5, 0.5, -0.5,        0.0, 0.0, -1.0
-]
+extension GameViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
+    func captureOutput(_ captureOutput: AVCaptureOutput!, didOutputSampleBuffer sampleBuffer: CMSampleBuffer!, from connection: AVCaptureConnection!) {
+        //let imageBuffer: CVImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
+//        textureBuffer = textureFromSampleBuffer(sampleBuffer: sampleBuffer)
+
+    }
+}
